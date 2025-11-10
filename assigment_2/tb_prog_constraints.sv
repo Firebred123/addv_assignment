@@ -3,7 +3,7 @@
 // Instantiate in TOP as: tb_prog tb_prog_inst (tb_if_i);
 `timescale 1ns / 1ps
 
-program tb_prog (
+program tb_prog_c (
     tb_if tb_h
 );
 
