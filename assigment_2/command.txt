@@ -1,1 +1,3 @@
 irun -sv -access +rwc -coverage all -covoverwrite \  tb_if.sv top.sv simple_cpu.v tb_prog.sv -top TOP
+
+irun -sv -access +rwc -coverage all -covoverwrite \  tb_if.sv top.sv simple_cpu.v tb_prog_constraints.sv -top TOP
