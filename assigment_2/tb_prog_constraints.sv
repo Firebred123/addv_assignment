@@ -14,26 +14,24 @@ program tb_prog_c (
   int seed;
 
   // ---------------------------------------------------------------------
-  // Combined covergroup with opcode coverpoint, flags coverpoint and cross
-  // Automatically sampled on tb_h.cb (posedge clock)
+  // Covergroup
   // ---------------------------------------------------------------------
   covergroup cg_opfl @(tb_h.cb);
-    // opcode coverpoint
     cp_opcode: coverpoint tb_h.instr[15:12] {
-      bins nop   = {4'h0};
-      bins add   = {4'h1};
-      bins sub   = {4'h2};
-      bins and_  = {4'h3};
-      bins or_   = {4'h4};
-      bins xor_  = {4'h5};
-      bins addi  = {4'h6};
-      bins shl   = {4'h7};
-      bins shr   = {4'h8};
-      bins load  = {4'h9};
+      bins nop = {4'h0};
+      bins add = {4'h1};
+      bins sub = {4'h2};
+      bins and_ = {4'h3};
+      bins or_ = {4'h4};
+      bins xor_ = {4'h5};
+      bins addi = {4'h6};
+      bins shl = {4'h7};
+      bins shr = {4'h8};
+      bins load = {4'h9};
       bins store = {4'hA};
-      bins brz   = {4'hB};
-      bins jmp   = {4'hC};
-      bins halt  = {4'hD};
+      bins brz = {4'hB};
+      bins jmp = {4'hC};
+      bins halt = {4'hD};
       bins others = default;
     }
   endgroup
@@ -41,73 +39,62 @@ program tb_prog_c (
   cg_opfl cg_inst = new();
 
   // ---------------------------------------------------------------------
-  // Constraint section for generating valid instruction patterns
+  // Constraint class to hold all constraints and randomization
   // ---------------------------------------------------------------------
-  constraint opcode_c {
-    // Include all instruction opcodes for full coverage
-    rand_instr[15:12] inside {
-      4'h0, // nop
-      4'h1, // add
-      4'h2, // sub
-      4'h3, // and
-      4'h4, // or
-      4'h5, // xor
-      4'h6, // addi
-      4'h7, // shl
-      4'h8, // shr
-      4'h9, // load
-      4'hA, // store
-      4'hB, // brz
-      4'hC, // jmp
-      4'hD  // halt
-    };
-  }
+  class instr_gen_c;
+    rand bit [15:0] rand_instr;
 
-  // Balanced weighting so rare ops get tested too
-  constraint opcode_weight_c {
-    rand_instr[15:12] dist {
-      4'h0 := 2, // nop
-      4'h1 := 2, // add
-      4'h2 := 2, // sub
-      4'h3 := 2, // and
-      4'h4 := 2, // or
-      4'h5 := 2, // xor
-      4'h6 := 2, // addi
-      4'h7 := 2, // shl
-      4'h8 := 2, // shr
-      4'h9 := 5, // load
-      4'hA := 5, // store
-      4'hB := 5, // brz
-      4'hC := 5, // jmp
-      4'hD := 3  // halt
-    };
-  }
+    // opcode constraint — includes all
+    constraint opcode_c {
+      rand_instr[15:12] inside {4'h0, 4'h1, 4'h2, 4'h3, 4'h4, 4'h5, 4'h6, 4'h7, 4'h8, 4'h9, 4'hA,
+                                4'hB, 4'hC, 4'hD};
+    }
 
-  // Memory access validity
-  constraint mem_addr_c {
-    rand_instr[7:0] < 8'd128; // restrict address range to lower memory
-  }
+    // weighted distribution
+    constraint opcode_weight_c {
+      rand_instr[15:12] dist {
+        4'h0 := 2,
+        4'h1 := 2,
+        4'h2 := 2,
+        4'h3 := 2,
+        4'h4 := 2,
+        4'h5 := 2,
+        4'h6 := 2,
+        4'h7 := 2,
+        4'h8 := 2,
+        4'h9 := 5,
+        4'hA := 5,
+        4'hB := 5,
+        4'hC := 5,
+        4'hD := 3
+      };
+    }
+
+    // memory validity constraint
+    constraint mem_addr_c {rand_instr[7:0] < 8'd128;}
+  endclass
 
   // ---------------------------------------------------------------------
-  // Initial block: random instruction generation and driving
+  // Initial block: generate & drive randomized instructions
   // ---------------------------------------------------------------------
   initial begin
     num_instructions = 200;
     seed = 42;
     instr_count = 0;
-    std::randomize(seed);
+
+    instr_gen_c gen = new();
 
     for (int i = 0; i < num_instructions; i++) begin
-      assert(std::randomize(rand_instr))
-        else $fatal("Randomization failed at %0d", i);
+      if (!gen.randomize()) begin
+        $fatal("Randomization failed at %0d", i);
+      end
 
-      tb_h.instr = rand_instr;
+      tb_h.instr = gen.rand_instr;
       tb_h.instr_valid = 1'b1;
 
       @(tb_h.cb);
       tb_h.instr_valid = 1'b0;
 
-      // Sample covergroup
       cg_inst.sample();
 
       instr_count++;
