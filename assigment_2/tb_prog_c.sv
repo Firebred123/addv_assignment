@@ -165,10 +165,21 @@ program tb_prog_c (
 
   // main test sequence (MODIFIED)
   task automatic run_tests();
+
+    // =================================================================
+    // *** FIX ***
+    // ALL task-local variable declarations MUST be at the top.
+    bit [15:0] inst;
+    bit [15:0] halt_instr;
+    // (The variable 'alu_instr' from the previous file was unused, so it's removed)
+    // =================================================================
+
     // wait for external reset deassertion
     wait (tb_h.rst_n == 1);
+
     // initialize memory
     for (int i = 0; i < 256; i++) mem[i] = $urandom_range(0, 255);
+
     // spawn memory model
     fork
       mem_model();
@@ -192,7 +203,11 @@ program tb_prog_c (
       end
 
       // **NEW**: Get the 16-bit instruction from the class
-      bit [15:0] inst = inst_item.get_instr();
+      //
+      // *** FIX ***: Use assignment, not declaration
+      // bit [15:0] inst = inst_item.get_instr(); <-- OLD (ILLEGAL)
+      inst = inst_item.get_instr();  // <-- NEW (LEGAL)
+
       // **NEW**: Use helper task to drive
       drive_instr(inst);
 
@@ -205,7 +220,7 @@ program tb_prog_c (
     // -----------------------------------------------------------------
     $display("[%0t] Random instructions complete. Running directed flag tests...", $time);
 
-    bit [15:0] alu_instr;
+    // *** FIX ***: Removed the 'bit [15:0] alu_instr;' declaration from here.
 
     // --- Test 1: Force Zero (Z) flag (XOR r1, r1)
     $display("[%0t] Flag Test: Forcing Zero flag (XOR r1, r1)", $time);
@@ -275,7 +290,10 @@ program tb_prog_c (
       $finish;
     end
 
-    bit [15:0] halt_instr = inst_item.get_instr();
+    // *** FIX ***: Use assignment, not declaration
+    // bit [15:0] halt_instr = inst_item.get_instr(); <-- OLD (ILLEGAL)
+    halt_instr = inst_item.get_instr();  // <-- NEW (LEGAL)
+
     // 3. Drive the HALT instruction
     drive_instr(halt_instr);
 
