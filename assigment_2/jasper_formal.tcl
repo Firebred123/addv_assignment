@@ -1,37 +1,28 @@
-# jasper_formal.tcl
-# JasperGold formal verification script
+# jasper_minimal.tcl
+# Minimal JasperGold script with correct syntax
 
-# Clear any previous setup
 clear -all
 
-# Analyze design files
-analyze -sv09 \
-    tb_if.sv \
-    simple_cpu.v \
-    sva_assertions.sv
+# Load files
+analyze -sv09 tb_if.sv
+analyze -verilog simple_cpu.v
+analyze -sv09 sva_assertions.sv
 
-# Elaborate the design
+# Elaborate
 elaborate -top simple_cpu
 
-# Set clock and reset
+# Clock and reset
 clock clk
 reset -expression {!rst_n}
 
-# Prove all assertions
+# Prove
 prove -all
 
-# Generate coverage report
-report -file jasper_results.txt
+# Report
+report > jasper_results.txt
 
-# Summary of results
-puts "\n=========================================="
-puts "FORMAL VERIFICATION SUMMARY"
-puts "=========================================="
-puts "Total Assertions: [get_property_list -type assert -count]"
-puts "Proven: [get_property_list -type assert -status proven -count]"
-puts "Falsified: [get_property_list -type assert -status falsified -count]"
-puts "Undetermined: [get_property_list -type assert -status undetermined -count]"
-puts "==========================================\n"
+# Show results
+get_property_info -list
 
-# Save session
-save_setup jasper_session.tcl
+# Save
+save_session jasper_session.tcl
