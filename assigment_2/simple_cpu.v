@@ -1,4 +1,4 @@
-// simple_cpu.sv
+// simple_cpu.v - SIMPLIFIED AND FIXED
 module simple_cpu (
     input clk,
     input rst_n,
@@ -22,127 +22,208 @@ module simple_cpu (
 );
 
   // FSM states
-  localparam IDLE = 3'd0, FETCH = 3'd1, DECODE = 3'd2, EXEC = 3'd3, MEM = 3'd4, WB = 3'd5;
+  localparam IDLE = 3'd0;
+  localparam DECODE = 3'd1;
+  localparam EXEC = 3'd2;
+  localparam MEM = 3'd3;
+  localparam WB = 3'd4;
 
-  reg [2:0] state;
+  reg [2:0] state, next_state;
   reg [15:0] instr_reg;
   reg [7:0] regfile[0:7];
-  reg [7:0] alu_a, alu_b, alu_out;
+  reg [7:0] alu_result;
   reg [7:0] pc;
-  reg carry, overflow, zero, negative;
 
-  // decode fields properly (no nested bit select!)
-  reg [3:0] opcode;
-  reg [2:0] rd_idx, rs_idx;
-  reg [3:0] imm4;
+  // Decode fields
+  wire [3:0] opcode = instr_reg[15:12];
+  wire [2:0] rd = instr_reg[11:9];
+  wire [2:0] rs = instr_reg[7:5];
+  wire [3:0] imm = instr_reg[3:0];
 
   integer i;
 
-  // combinational decode from instr_reg
-  always @(*) begin
-    opcode = instr_reg[15:12];
-    rd_idx = instr_reg[11:9];  // use only top 3 bits for 8 regs
-    rs_idx = instr_reg[7:5];
-    imm4   = instr_reg[3:0];
-  end
-
-  // synchronous FSM
+  // State register
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       state <= IDLE;
-      pc <= 8'd0;
+    end else begin
+      state <= next_state;
+    end
+  end
+
+  // Next state logic
+  always @(*) begin
+    next_state = state;
+    case (state)
+      IDLE: begin
+        if (instr_valid) next_state = DECODE;
+      end
+
+      DECODE: begin
+        next_state = EXEC;
+      end
+
+      EXEC: begin
+        if (opcode == 4'h9 || opcode == 4'hA) begin
+          // LOAD/STORE - go to MEM
+          next_state = MEM;
+        end else if (opcode >= 4'h1 && opcode <= 4'h8) begin
+          // ALU ops - go to WB
+          next_state = WB;
+        end else begin
+          // NOP, Branch, Jump, HALT - back to IDLE
+          next_state = IDLE;
+        end
+      end
+
+      MEM: begin
+        if (mem_ready) next_state = IDLE;
+      end
+
+      WB: begin
+        next_state = IDLE;
+      end
+
+      default: next_state = IDLE;
+    endcase
+  end
+
+  // Datapath
+  always @(posedge clk or negedge rst_n) begin
+    if (!rst_n) begin
+      instr_reg <= 16'h0;
       instr_ready <= 1'b0;
       done <= 1'b0;
       mem_req <= 1'b0;
       mem_we <= 1'b0;
+      mem_addr <= 8'h0;
+      mem_wdata <= 8'h0;
+      pc <= 8'h0;
       flags <= 4'b0;
-      for (i = 0; i < 8; i = i + 1) regfile[i] <= 8'd0;
+      alu_result <= 8'h0;
+
+      for (i = 0; i < 8; i = i + 1) begin
+        regfile[i] <= 8'h0;
+      end
+
     end else begin
       case (state)
-        //--------------------------------------------------
-        // IDLE: waiting for instruction fetch
-        //--------------------------------------------------
+
         IDLE: begin
           instr_ready <= 1'b1;
+          mem_req <= 1'b0;
+          mem_we <= 1'b0;
+
           if (instr_valid) begin
-            instr_reg <= instr;
+            instr_reg   <= instr;
             instr_ready <= 1'b0;
-            state <= DECODE;
           end
         end
 
-        //--------------------------------------------------
-        // DECODE: read operands
-        //--------------------------------------------------
         DECODE: begin
-          alu_a <= regfile[rd_idx];
-          alu_b <= regfile[rs_idx];
-          state <= EXEC;
+          // Just pass through
         end
 
-        //--------------------------------------------------
-        // EXEC: perform operation (cycle count: 3 typical)
-        //--------------------------------------------------
         EXEC: begin
           case (opcode)
-            4'h0: pc <= pc + 1;  // NOP
-            4'h1: alu_out <= alu_a + alu_b;  // ADD
-            4'h2: alu_out <= alu_a - alu_b;  // SUB
-            4'h3: alu_out <= alu_a & alu_b;
-            4'h4: alu_out <= alu_a | alu_b;
-            4'h5: alu_out <= alu_a ^ alu_b;
-            4'h6: alu_out <= alu_a + imm4;  // ADDI
-            4'h7: alu_out <= alu_a << imm4;  // SHL
-            4'h8: alu_out <= alu_a >> imm4;  // SHR
-            4'h9, 4'hA: begin  // LOAD/STORE
-              mem_addr <= regfile[rs_idx] + imm4;
+            4'h0: begin  // NOP
+              pc <= pc + 1;
+            end
+
+            4'h1: begin  // ADD
+              alu_result <= regfile[rd] + regfile[rs];
+            end
+
+            4'h2: begin  // SUB
+              alu_result <= regfile[rd] - regfile[rs];
+            end
+
+            4'h3: begin  // AND
+              alu_result <= regfile[rd] & regfile[rs];
+            end
+
+            4'h4: begin  // OR
+              alu_result <= regfile[rd] | regfile[rs];
+            end
+
+            4'h5: begin  // XOR
+              alu_result <= regfile[rd] ^ regfile[rs];
+            end
+
+            4'h6: begin  // ADDI
+              alu_result <= regfile[rd] + imm;
+            end
+
+            4'h7: begin  // SHL
+              alu_result <= regfile[rd] << imm;
+            end
+
+            4'h8: begin  // SHR
+              alu_result <= regfile[rd] >> imm;
+            end
+
+            4'h9: begin  // LOAD
+              mem_addr <= regfile[rs] + imm;
               mem_req  <= 1'b1;
-              mem_we   <= (opcode == 4'hA);
-              if (opcode == 4'hA) mem_wdata <= regfile[rs_idx];
-              state <= MEM;
+              mem_we   <= 1'b0;
             end
+
+            4'hA: begin  // STORE
+              mem_addr <= regfile[rs] + imm;
+              mem_wdata <= regfile[rd];
+              mem_req <= 1'b1;
+              mem_we <= 1'b1;
+            end
+
             4'hB: begin  // BRZ
-              if (regfile[rs_idx] == 0) pc <= pc + imm4;
-              else pc <= pc + 1;
+              if (regfile[rs] == 8'h0) begin
+                pc <= pc + imm;
+              end else begin
+                pc <= pc + 1;
+              end
             end
-            4'hC: pc <= pc + imm4;  // JMP
-            4'hF: done <= 1'b1;  // HALT
-            default: pc <= pc + 1;
+
+            4'hC: begin  // JMP
+              pc <= pc + imm;
+            end
+
+            4'hF: begin  // HALT
+              done <= 1'b1;
+            end
+
+            default: begin
+              pc <= pc + 1;
+            end
           endcase
-          if (opcode < 4'h9) state <= WB;
         end
 
-        //--------------------------------------------------
-        // MEM: wait for memory ready
-        //--------------------------------------------------
         MEM: begin
           if (mem_ready) begin
             mem_req <= 1'b0;
-            if (opcode == 4'h9) regfile[rd_idx] <= mem_rdata;
+            mem_we  <= 1'b0;
+
+            if (opcode == 4'h9) begin
+              // LOAD - capture data
+              regfile[rd] <= mem_rdata;
+            end
+
             pc <= pc + 1;
-            state <= WB;
           end
         end
 
-        //--------------------------------------------------
-        // WB: write back results
-        //--------------------------------------------------
         WB: begin
-          if (opcode >= 4'h1 && opcode <= 4'h8) regfile[rd_idx] <= alu_out;
+          // Write ALU result back to register
+          regfile[rd] <= alu_result;
 
-          // update flags
-          zero = (alu_out == 8'd0);
-          negative = alu_out[7];
-          // simple carry/overflow approximation
-          carry = (opcode == 4'h1) ? (alu_a + alu_b > 8'hFF) :
-                            (opcode == 4'h2) ? (alu_a < alu_b) : 1'b0;
-          overflow = carry ^ negative;
-          flags <= {zero, negative, carry, overflow};
+          // Update flags
+          flags[3]    <= (alu_result == 8'h0);  // Zero
+          flags[2]    <= alu_result[7];  // Negative
+          flags[1]    <= 1'b0;  // Carry (simplified)
+          flags[0]    <= 1'b0;  // Overflow (simplified)
 
-          state <= IDLE;
+          pc          <= pc + 1;
         end
 
-        default: state <= IDLE;
       endcase
     end
   end
