@@ -1,4 +1,4 @@
-// simple_cpu.sv (minimal fixes: STORE writes rd; mem_we cleared after MEM)
+// simple_cpu.sv - FIXED VERSION
 module simple_cpu (
     input clk,
     input rst_n,
@@ -85,31 +85,44 @@ module simple_cpu (
         //--------------------------------------------------
         EXEC: begin
           case (opcode)
-            4'h0:    pc <= pc + 1;  // NOP
-            4'h1:    alu_out <= alu_a + alu_b;  // ADD
-            4'h2:    alu_out <= alu_a - alu_b;  // SUB
-            4'h3:    alu_out <= alu_a & alu_b;
-            4'h4:    alu_out <= alu_a | alu_b;
-            4'h5:    alu_out <= alu_a ^ alu_b;
-            4'h6:    alu_out <= alu_a + imm4;  // ADDI
-            4'h7:    alu_out <= alu_a << imm4;  // SHL
-            4'h8:    alu_out <= alu_a >> imm4;  // SHR
+            4'h0: pc <= pc + 1;  // NOP
+            4'h1: alu_out <= alu_a + alu_b;  // ADD
+            4'h2: alu_out <= alu_a - alu_b;  // SUB
+            4'h3: alu_out <= alu_a & alu_b;
+            4'h4: alu_out <= alu_a | alu_b;
+            4'h5: alu_out <= alu_a ^ alu_b;
+            4'h6: alu_out <= alu_a + imm4;  // ADDI
+            4'h7: alu_out <= alu_a << imm4;  // SHL
+            4'h8: alu_out <= alu_a >> imm4;  // SHR
             4'h9, 4'hA: begin  // LOAD/STORE
-              mem_addr <= regfile[rs_idx] + imm4;  // base = reg[rs] + imm
+              // FIX: Use rs for address base, rd for store data
+              mem_addr <= regfile[rs_idx] + imm4;
               mem_req  <= 1'b1;
               mem_we   <= (opcode == 4'hA);
-              if (opcode == 4'hA) mem_wdata <= regfile[rd_idx];  // STORE: write rd (not rs)
+              // FIX: For STORE, use rd (destination in encoding) as the data source
+              if (opcode == 4'hA) mem_wdata <= regfile[rd_idx];
               state <= MEM;
             end
             4'hB: begin  // BRZ
               if (regfile[rs_idx] == 0) pc <= pc + imm4;
               else pc <= pc + 1;
+              state <= IDLE;  // FIX: Branch should go back to IDLE
             end
-            4'hC:    pc <= pc + imm4;  // JMP
-            4'hF:    done <= 1'b1;  // HALT
-            default: pc <= pc + 1;
+            4'hC: begin  // JMP
+              pc <= pc + imm4;
+              state <= IDLE;  // FIX: Jump should go back to IDLE
+            end
+            4'hF: begin  // HALT
+              done  <= 1'b1;
+              state <= IDLE;  // Stay in a safe state after HALT
+            end
+            default: begin
+              pc <= pc + 1;
+              state <= IDLE;
+            end
           endcase
-          if (opcode < 4'h9) state <= WB;
+          // Only go to WB for ALU operations
+          if (opcode >= 4'h1 && opcode <= 4'h8) state <= WB;
         end
 
         //--------------------------------------------------
@@ -118,10 +131,11 @@ module simple_cpu (
         MEM: begin
           if (mem_ready) begin
             mem_req <= 1'b0;
-            mem_we  <= 1'b0;  // clear mem_we when transaction completes
+            mem_we  <= 1'b0;  // FIX: Clear write enable
+            // For LOAD, capture the data
             if (opcode == 4'h9) regfile[rd_idx] <= mem_rdata;
             pc <= pc + 1;
-            state <= WB;
+            state <= IDLE;  // FIX: Go back to IDLE after memory operation
           end
         end
 
