@@ -1,27 +1,23 @@
 // top.sv
 `timescale 1ns / 1ps
-
-module top;
-  // Clock generation in TOP
-  logic clk;
-  initial clk = 0;
-  always #5 clk = ~clk;  // 10 ns period
-
-  // Reset
+module TOP;  // note: your earlier command used -top TOP
+  // clock
+  logic clk = 0;
+  always #5 clk = ~clk;
+  // reset
   logic rst_n;
   initial begin
     rst_n = 0;
-    #20;
-    rst_n = 1;
+    #20 rst_n = 1;
   end
 
-  // instantiate the interface
+  // instantiate interface
   tb_if tb_if_i (
       .clk  (clk),
       .rst_n(rst_n)
   );
 
-  // Instantiate CPU (simple_cpu.sv must be compiled alongside)
+  // instantiate CPU (simple_cpu.v)
   simple_cpu uut (
       .clk        (tb_if_i.clk),
       .rst_n      (tb_if_i.rst_n),
@@ -38,9 +34,13 @@ module top;
       .flags      (tb_if_i.flags)
   );
 
-  // construct and start program-based testbench (defined in tb_prog.sv)
+  // instantiate the program and connect interface to its port
+  tb_prog tb_prog_inst (tb_if_i);
+
+  // start the test by calling program task
   initial begin
-    tb_prog p = new(tb_if_i);
-    p.start();
+    // give program a small delay to initialize
+    #1;
+    tb_prog_inst.start();
   end
 endmodule
