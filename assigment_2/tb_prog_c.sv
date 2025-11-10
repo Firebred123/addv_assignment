@@ -51,13 +51,15 @@ program tb_prog_c (
   // local variables (declarations first)
   int unsigned num_instructions;
   logic [7:0] mem[0:255];
-  // *NEW*: Handle for our instruction class
+  // **NEW**: Handle for our instruction class
   instruction inst_item;
   // forward-declare any ints used later in functions/tasks
   // (these will be re-declared locally in functions where needed)
 
-  // Coverage groups (Copied directly from tb_prog.sv)
-  covergroup cg_opcode @(tb_h.cb);
+  // =================================================================
+  // *** FIX 1: Remove @(tb_h.cb) to disable automatic sampling
+  // =================================================================
+  covergroup cg_opcode;
     cp_opcode: coverpoint tb_h.instr[15:12] {
       bins nop = {4'h0};
       bins add = {4'h1};
@@ -78,7 +80,10 @@ program tb_prog_c (
   endgroup
   cg_opcode cg_op = new();
 
-  covergroup cg_flags @(tb_h.cb);
+  // =================================================================
+  // *** FIX 1: Remove @(tb_h.cb) to disable automatic sampling
+  // =================================================================
+  covergroup cg_flags;
     // flags order in CPU: {Z, N, C, V}
     cp_flags: coverpoint tb_h.flags {
       bins all_flags[] = {[0 : 15]};
@@ -86,9 +91,15 @@ program tb_prog_c (
   endgroup
   cg_flags cg_fl = new();
 
+
+  // =================================================================
+  // *** FIX 2: Declare persistent variable *outside* the automatic task
+  // =================================================================
+  logic mem_ready_ff;  // This now has a static lifetime
+
   // memory model task (FIXED to prevent race condition)
   task automatic mem_model();
-    logic mem_ready_ff;  // Use a register for synchronous behavior
+    // *** FIX 2 ***: Variable declaration was moved outside
 
     // Default state
     tb_h.cb.mem_ready <= 1'b0;
@@ -128,7 +139,7 @@ program tb_prog_c (
     end
   endtask
 
-  // --- *NEW*: Helper task to drive a single instruction
+  // --- **NEW**: Helper task to drive a single instruction
   task automatic drive_instr(bit [15:0] inst);
     // 1. Wait for CPU to be ready
     do @(tb_h.cb); while (!tb_h.cb.instr_ready);
@@ -144,9 +155,9 @@ program tb_prog_c (
     cg_op.sample();
   endtask
 
-  // --- *NEW*: Helper task to load a register with a specific value
+  // --- **NEW**: Helper task to load a register with a specific value
   // Note: This assumes reg[0] is 0 (which it is at reset)
-  // It uses LOAD rd, [r0 + addr]
+  // It uses `LOAD rd, [r0 + addr]`
   task automatic load_reg_via_mem(int reg_idx, logic [7:0] val, logic [7:0] addr);
     bit [15:0] load_instr;
 
@@ -182,11 +193,9 @@ program tb_prog_c (
   task automatic run_tests();
 
     // =================================================================
-    // *** FIX ***
     // ALL task-local variable declarations MUST be at the top.
     bit [15:0] inst;
     bit [15:0] halt_instr;
-    // (The variable 'alu_instr' from the previous file was unused, so it's removed)
     // =================================================================
 
     // wait for external reset deassertion
@@ -200,7 +209,7 @@ program tb_prog_c (
       mem_model();
     join_none
 
-    // *NEW*: Construct the instruction item
+    // **NEW**: Construct the instruction item
     inst_item = new();
 
     // -----------------------------------------------------------------
@@ -211,19 +220,16 @@ program tb_prog_c (
              num_instructions);
 
     for (int i = 0; i < num_instructions; i++) begin
-      // *NEW*: Randomize the class object
+      // **NEW**: Randomize the class object
       if (!inst_item.randomize()) begin
         $error("Randomization failed!");
         $finish;
       end
 
-      // *NEW*: Get the 16-bit instruction from the class
-      //
-      // *** FIX ***: Use assignment, not declaration
-      // bit [15:0] inst = inst_item.get_instr(); <-- OLD (ILLEGAL)
-      inst = inst_item.get_instr();  // <-- NEW (LEGAL)
+      // **NEW**: Get the 16-bit instruction from the class
+      inst = inst_item.get_instr();
 
-      // *NEW*: Use helper task to drive
+      // **NEW**: Use helper task to drive
       drive_instr(inst);
 
       // sample coverage (flags)
@@ -231,11 +237,9 @@ program tb_prog_c (
     end
 
     // -----------------------------------------------------------------
-    // 2. *NEW*: DIRECTED FLAG-COVERAGE PHASE
+    // 2. **NEW**: DIRECTED FLAG-COVERAGE PHASE
     // -----------------------------------------------------------------
     $display("[%0t] Random instructions complete. Running directed flag tests...", $time);
-
-    // *** FIX ***: Removed the 'bit [15:0] alu_instr;' declaration from here.
 
     // --- Test 1: Force Zero (Z) flag (XOR r1, r1)
     $display("[%0t] Flag Test: Forcing Zero flag (XOR r1, r1)", $time);
@@ -305,9 +309,8 @@ program tb_prog_c (
       $finish;
     end
 
-    // *** FIX ***: Use assignment, not declaration
-    // bit [15:0] halt_instr = inst_item.get_instr(); <-- OLD (ILLEGAL)
-    halt_instr = inst_item.get_instr();  // <-- NEW (LEGAL)
+    // Use assignment
+    halt_instr = inst_item.get_instr();
 
     // 3. Drive the HALT instruction
     drive_instr(halt_instr);
