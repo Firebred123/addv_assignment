@@ -18,9 +18,6 @@ reset -expression {!rst_n}
 # Prove
 prove -all
 
-# Report
-report > jasper_results.txt
-
 # Show results
 get_property_info -list
 
